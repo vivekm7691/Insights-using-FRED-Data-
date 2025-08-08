@@ -1,0 +1,41 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FRED API Explorer</title>
+</head>
+<body>
+    <h1>FRED Series Lookup</h1>
+    <form id="fredForm">
+        <label for="seriesId">Enter FRED Series ID:</label>
+        <input type="text" id="seriesId" name="seriesId" required />
+        <button type="submit">Fetch Data</button>
+    </form>
+
+    <pre id="output" style="margin-top: 20px; background: #f4f4f4; padding: 10px;"></pre>
+
+    <script>
+        const apiKey = 'xxxx'; // ⚠️ Replace for demo use only
+
+        let FRED_DATA = {}; // Global variable to hold fetched JSON
+
+        document.getElementById('fredForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const seriesId = document.getElementById('seriesId').value;
+            const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json`;
+
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+                FRED_DATA = await response.json(); // Store in global variable
+                document.getElementById('output').textContent = JSON.stringify(FRED_DATA, null, 2);
+            } catch (err) {
+                document.getElementById('output').textContent = `Error: ${err.message}`;
+                FRED_DATA = {}; // Clear on error
+            }
+        });
+    </script>
+</body>
+</html>
