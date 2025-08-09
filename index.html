@@ -3,39 +3,128 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FRED API Explorer</title>
+    <title>FRED to Azure OpenAI (Frontend Only)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: auto;
+            padding: 1rem;
+        }
+
+        pre {
+            background: #f5f5f5;
+            padding: 1rem;
+            overflow-x: auto;
+        }
+
+        label {
+            font-weight: bold;
+        }
+
+        button {
+            margin-top: 0.5rem;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+    </style>
 </head>
 <body>
-    <h1>FRED Series Lookup</h1>
-    <form id="fredForm">
-        <label for="seriesId">Enter FRED Series ID:</label>
-        <input type="text" id="seriesId" name="seriesId" required />
-        <button type="submit">Fetch Data</button>
-    </form>
+    <h1>FRED Series Summary (via Azure OpenAI)</h1>
 
-    <pre id="output" style="margin-top: 20px; background: #f4f4f4; padding: 10px;"></pre>
+    <div class="section">
+        <label for="seriesId">FRED Series ID:</label><br />
+        <input type="text" id="seriesId" placeholder="e.g., GDP, CPIAUCSL" required />
+        <br />
+        <button onclick="handleSubmit()">Fetch & Summarize</button>
+        <p id="status"></p>
+    </div>
+
+    <div class="section">
+        <h2>Raw FRED JSON</h2>
+        <pre id="fredOutput">—</pre>
+    </div>
+
+    <div class="section">
+        <h2>AI Summary</h2>
+        <pre id="summaryOutput">—</pre>
+    </div>
 
     <script>
-        const apiKey = 'xxxx'; // ⚠️ Replace for demo use only
+        const FRED_API_KEY = 'x'
+        const AZURE_OPENAI_KEY = 'y'
+        const AZURE_ENDPOINT = 'https://models.inference.ai.azure.com';  // ⚠️ Replace with your endpoint
+        const DEPLOYMENT_NAME = 'gpt-4';  // e.g., "gpt-35-turbo"
+        const API_VERSION = '2023-05-15';  // adjust based on your deployment
 
-        let FRED_DATA = {}; // Global variable to hold fetched JSON
+        async function handleSubmit() {
+            const seriesId = document.getElementById('seriesId').value.trim();
+            const status = document.getElementById('status');
+            const fredOutput = document.getElementById('fredOutput');
+            const summaryOutput = document.getElementById('summaryOutput');
 
-        document.getElementById('fredForm').addEventListener('submit', async function (e) {
-            e.preventDefault();
+            if (!seriesId) {
+                alert("Please enter a Series ID.");
+                return;
+            }
 
-            const seriesId = document.getElementById('seriesId').value;
-            const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json`;
+            status.textContent = 'Fetching FRED data...';
+            fredOutput.textContent = '—';
+            summaryOutput.textContent = '—';
 
             try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-                FRED_DATA = await response.json(); // Store in global variable
-                document.getElementById('output').textContent = JSON.stringify(FRED_DATA, null, 2);
+                const fredUrl = `https://api.stlouisfed.org/fred/series?series_id=${seriesId}&api_key=${FRED_API_KEY}&file_type=json`;
+                const fredResp = await fetch(fredUrl);
+                if (!fredResp.ok) throw new Error(`FRED fetch failed: ${fredResp.status}`);
+                const FRED_DATA = await fredResp.json();
+                window.FRED_DATA = FRED_DATA; // store globally
+
+                fredOutput.textContent = JSON.stringify(FRED_DATA, null, 2);
+                status.textContent = 'Summarizing via Azure OpenAI...';
+
+                const prompt = `
+Here is a FRED API response for series ID "${seriesId}":
+${JSON.stringify(FRED_DATA, null, 2)}
+
+Summarize the key information in plain English. Mention the title, units, frequency, data source, and any other useful insights. Also suggest a related economic indicator if applicable.
+            `.trim();
+
+                const azureUrl = `${AZURE_ENDPOINT}/openai/deployments/${DEPLOYMENT_NAME}/chat/completions?api-version=${API_VERSION}`;
+
+                const azureResp = await fetch(azureUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'api-key': AZURE_OPENAI_KEY
+                    },
+                    body: JSON.stringify({
+                        messages: [
+                            { role: "system", content: "You summarize FRED API JSON responses into helpful plain-English explanations." },
+                            { role: "user", content: prompt }
+
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 500
+                    })
+                });
+
+                if (!azureResp.ok) {
+                    const err = await azureResp.text();
+                    throw new Error(`Azure error: ${azureResp.status} - ${err}`);
+                }
+
+                const aiData = await azureResp.json();
+                const summary = aiData.choices?.[0]?.message?.content || "No summary returned.";
+                summaryOutput.textContent = summary.trim();
+                status.textContent = 'Done.';
             } catch (err) {
-                document.getElementById('output').textContent = `Error: ${err.message}`;
-                FRED_DATA = {}; // Clear on error
+                console.error(err);
+                status.textContent = 'Error occurred.';
+                summaryOutput.textContent = `Error: ${err.message}`;
             }
-        });
+        }
     </script>
 </body>
 </html>
